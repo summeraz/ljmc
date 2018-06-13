@@ -14,15 +14,15 @@ epsilon = 1.0
 cutoff = 2.5
 
 ### Define System Parameters ###
-n_particles = 256
-number_density = 0.7
+n_particles = 125
+number_density = 0.5
 
 ### Define Monte Carlo Parameters ###
 temperature = 1.2   # Temperature of the simulation
 dx = 0.1            # Initial maximum displacement
 target = 0.5        # Target acceptance probabality
-n_relax = 10     # Number of timesteps to relax from initial configuration
-n_mc = 0       # Total number of MC steps
+n_relax = 2500      # Number of timesteps to relax from initial configuration
+n_mc = 25000        # Total number of MC steps
 
 #############################################################################
 
@@ -42,18 +42,8 @@ system.build_nlist(skin=0.5)
 # Create Monte Carlo instance
 mc = MonteCarlo(system=system, dx=dx, temperature=temperature, target=target)
 
-import cProfile, pstats
-pr = cProfile.Profile()
-pr.enable()
-
-# Relax the system (and optimize `dx`)
-mc.relax(n_relax, adjust_freq=20)
-
-pr.disable()
-f = open('run-cython.prof', 'a')
-sortby = 'cumulative'
-pstats.Stats(pr, stream=f).strip_dirs().sort_stats(sortby).print_stats()
-f.close()
+# Relax the system and optimize `dx`
+mc.relax(n_relax, adjust_freq=50)
 
 # Monte Carlo production run
-#mc.run(n_mc)
+mc.run(traj_filename='traj.xyz', steps=n_mc, freq=100)

@@ -2,6 +2,7 @@ from __future__ import division
 
 from copy import deepcopy
 import itertools
+import os
 import random
 
 import mbuild as mb
@@ -27,43 +28,47 @@ class System():
         self.density = density
         self.forcefield = forcefield
 
-        cdef float box_length = (n / density) ** (1 / 3)
+        box_length = (n / density) ** (1 / 3)
         box = mb.Box(lengths=np.ones(3) * box_length)
         self.box = box
         self.box_length = box_length
 
-        particle = mb.Particle(name='_LJ')
-        packed_box = mb.fill_box(particle, n_compounds=n, box=box, overlap=0.9,
-                                 edge=0.9)
-        self.traj = packed_box.to_trajectory()
-        self.xyz = self.traj.xyz[0]
+        particles_per_len = round(n ** (1 / 3))
+        pattern = mb.Grid3DPattern(particles_per_len, particles_per_len,
+                                   particles_per_len)
+        pattern.scale(box_length)
+        compound = mb.Compound()
+        for pos in pattern:
+            compound.add(mb.Particle(name='_LJ', pos=pos))
+        compound.periodicity = box.lengths
+        self.traj = compound.to_trajectory()
 
         self.print_params()
 
-    def calc_energy(self, int id, double inner_cutoff=0.75, total=False):
+    def calc_energy(self, int id, double inner_cutoff=0.65, total=False):
         """
         Parameters
         ----------
         id : int
             Return PE of the particle with this ID (if total is `False`)
-        inner_cutoff : float, optional, default=0.75
+        inner_cutoff : float, optional, default=0.65
             Close-range cutoff for inter-particle distances to avoid overflow
         total : bool, optional, default=False
             Return the total PE of the system
         """
-        cdef double cutoff, epsilon, sigma
+        cdef int i
+        cdef double cutoff, epsilon, sigma, dist, pe
+
         cutoff = self.forcefield.cutoff
         epsilon = self.forcefield.epsilon
         sigma = self.forcefield.sigma
 
-        cdef int i
-        cdef double dist, pe
         pe = 0
         for i in range(self.n):
             if total or id == i:
                 atom_pairs = list(itertools.product([i], self.nlist[i]))
                 dists = md.compute_distances(self.traj, atom_pairs)[0]
-                if min(dists) < inner_cutoff:
+                if not total and min(dists) < inner_cutoff:
                     return False
                 else:
                     for dist in dists:
@@ -73,7 +78,7 @@ class System():
 
         return pe
 
-    def displace_coords(self, id, dx):
+    def displace_coords(self, int id, double dx):
         """
         Parameters
         ----------
@@ -82,21 +87,26 @@ class System():
         dx : float
             Maximum displacement distance in each dimension
         """
+        cdef int k
+        cdef double dx_temp, new_pos
+
         for k in range(3):
             dx_temp = dx * (2.0 * random.random() - 1.0)
-            new_pos = self.xyz[id, k] + dx_temp
+            new_pos = self.traj.xyz[0, id, k] + dx_temp
             new_pos -= self.box_length * anint(new_pos * (1 / self.box_length))
             self.traj.xyz[0, id, k] = new_pos
 
-    def build_nlist(self, skin):
+    def build_nlist(self, double skin):
         """
         Parameters
         ----------
         skin : float
             Skin distance for the neighborlist
         """
+        cdef double total_range
+
         self.skin = skin
-        self.xyz_old = deepcopy(self.xyz)
+        self.xyz_old = deepcopy(self.traj.xyz[0])
 
         total_range = skin + self.forcefield.cutoff
         nlist = [md.compute_neighbors(self.traj, total_range, [id])[0]
@@ -106,10 +116,13 @@ class System():
     def check_nlist(self):
         """
         """
+        cdef int k
+        cdef double half_skin
+
         half_skin = self.skin / 2
         rebuild = False
 
-        for xyz_new, xyz_old in zip(self.xyz, self.xyz_old):
+        for xyz_new, xyz_old in zip(self.traj.xyz[0], self.xyz_old):
             rij = []
             for k in range(3):
                 rij.append(xyz_new[k] - xyz_old[k])
@@ -140,4 +153,6 @@ class System():
         filename : str
             Filename to write coordinates to
         """
-        pass
+        self.traj.save_xyz('tmp.xyz')
+        os.system('cat tmp.xyz >> {}'.format(filename))
+        os.remove('tmp.xyz')
