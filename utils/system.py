@@ -5,6 +5,7 @@ import itertools
 import random
 
 import mbuild as mb
+import mdtraj as md
 import numpy as np
 
 from .utils import *
@@ -34,7 +35,8 @@ class System():
         particle = mb.Particle(name='_LJ')
         packed_box = mb.fill_box(particle, n_compounds=n, box=box, overlap=0.9,
                                  edge=0.9)
-        self.xyz = packed_box.xyz
+        self.traj = packed_box.to_trajectory()
+        self.xyz = self.traj.xyz[0]
 
         self.print_params()
 
@@ -52,20 +54,15 @@ class System():
         sigma = self.forcefield.sigma
 
         pe = 0
-        for i, xyz1 in enumerate(self.xyz):
+        for i in range(self.n):
             if not id or id == i:
-                for j in self.nlist[i]:
-                    xyz2 = self.xyz[j]
-                    rij = []
-                    for k in range(3):
-                        rij.append(xyz1[k] - xyz2[k])
-                        pbc = self.box_length * anint(rij[k] * (1 / self.box_length))
-                        rij[k] -= pbc
-                    r = np.linalg.norm(rij)
-                    if r < inner_cutoff:
-                        return False
-                    elif r < cutoff:
-                        pe += 4 * epsilon * ((sigma / r)**12 - (sigma / r)**6)
+                atom_pairs = list(itertools.product([i], self.nlist[i]))
+                dists = md.compute_distances(self.traj, atom_pairs)[0]
+                if min(dists) < inner_cutoff:
+                    return False
+                else:
+                    for dist in dists:
+                        pe += 4 * epsilon * ((sigma / dist)**12 - (sigma / dist)**6)
         if not id:
             pe /= 2
 
@@ -95,20 +92,10 @@ class System():
         """
         self.skin = skin
         self.xyz_old = deepcopy(self.xyz)
-        nlist = [[] for _ in self.xyz]
+
         total_range = skin + self.forcefield.cutoff
-
-        for i, xyz in enumerate(self.xyz):
-            for j, xyz2 in enumerate(self.xyz):
-                if i != j:
-                    rij = []
-                    for k in range(3):
-                        rij.append(xyz[k] - xyz2[k])
-                        pbc = self.box_length * anint(rij[k] * (1 / self.box_length))
-                        rij[k] -= pbc
-                    if np.linalg.norm(rij) < total_range:
-                        nlist[i].append(j)
-
+        nlist = [md.compute_neighbors(self.traj, total_range, [id])[0]
+                 for id in range(self.n)]
         self.nlist = nlist
 
     def check_nlist(self):
