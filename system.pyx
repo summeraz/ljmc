@@ -8,7 +8,7 @@ import mbuild as mb
 import mdtraj as md
 import numpy as np
 
-from .utils import *
+from utils import *
 
 
 class System():
@@ -22,12 +22,12 @@ class System():
     forcefield : ForceField
         Force field defining particle interactions
     """
-    def __init__(self, n, density, forcefield):
+    def __init__(self, int n, double density, forcefield):
         self.n = n
         self.density = density
         self.forcefield = forcefield
 
-        box_length = (n / density) ** (1 / 3)
+        cdef float box_length = (n / density) ** (1 / 3)
         box = mb.Box(lengths=np.ones(3) * box_length)
         self.box = box
         self.box_length = box_length
@@ -40,22 +40,27 @@ class System():
 
         self.print_params()
 
-    def calc_energy(self, inner_cutoff=0.75, id=None):
+    def calc_energy(self, int id, double inner_cutoff=0.75, total=False):
         """
         Parameters
         ----------
+        id : int
+            Return PE of the particle with this ID (if total is `False`)
         inner_cutoff : float, optional, default=0.75
             Close-range cutoff for inter-particle distances to avoid overflow
-        id : int, optional, default=None
-            Only return PE of the particle with this ID
+        total : bool, optional, default=False
+            Return the total PE of the system
         """
+        cdef double cutoff, epsilon, sigma
         cutoff = self.forcefield.cutoff
         epsilon = self.forcefield.epsilon
         sigma = self.forcefield.sigma
 
+        cdef int i
+        cdef double dist, pe
         pe = 0
         for i in range(self.n):
-            if not id or id == i:
+            if total or id == i:
                 atom_pairs = list(itertools.product([i], self.nlist[i]))
                 dists = md.compute_distances(self.traj, atom_pairs)[0]
                 if min(dists) < inner_cutoff:
@@ -63,7 +68,7 @@ class System():
                 else:
                     for dist in dists:
                         pe += 4 * epsilon * ((sigma / dist)**12 - (sigma / dist)**6)
-        if not id:
+        if total:
             pe /= 2
 
         return pe
@@ -77,11 +82,11 @@ class System():
         dx : float
             Maximum displacement distance in each dimension
         """
-        for k in range(2):
+        for k in range(3):
             dx_temp = dx * (2.0 * random.random() - 1.0)
             new_pos = self.xyz[id, k] + dx_temp
             new_pos -= self.box_length * anint(new_pos * (1 / self.box_length))
-            self.xyz[id, k] = new_pos
+            self.traj.xyz[0, id, k] = new_pos
 
     def build_nlist(self, skin):
         """

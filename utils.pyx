@@ -1,7 +1,7 @@
 from __future__ import division
 
 
-def anint(val):
+def anint(double val):
     if val >= 0.5:
         return 1.0
     elif val <= -0.5:
