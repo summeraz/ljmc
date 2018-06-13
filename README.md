@@ -1,5 +1,6 @@
 ### Installation
 To install, clone this repo via
+
 ```git clone https://github.com/summeraz/ljmc.git```
 
 ### Running MC simulations
@@ -8,6 +9,7 @@ acts as the driver for MC simulations. Here one can specify the
 force field, system, and simulation parameters.
 
 To run, simply execute:
+
 ```python run.py```
 
 As this is pure Python code, performance is quite poor. Individual
